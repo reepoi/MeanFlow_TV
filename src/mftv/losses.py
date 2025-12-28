@@ -1,9 +1,9 @@
-import torch 
+import torch
 import torch.autograd.functional as func
 
 
 def combined_loss(model, source_samples, target_samples, t, r):
-    
+
     velocity = source_samples - target_samples
     x_interp = (1 - t) * target_samples + t * source_samples
     tau = torch.clamp(t - r, min=1e-8)
@@ -32,7 +32,7 @@ def combined_loss(model, source_samples, target_samples, t, r):
 
     target_2 = velocity - u  - tau * dudt
     loss_2 = torch.nn.functional.mse_loss(tau * nabla_x_u_dot_v, target_2)
-    
+
     return loss_1 + 0.2 * loss_2
 
 def backward_loss(model, source_samples, target_samples, t, r):
@@ -50,7 +50,7 @@ def backward_loss(model, source_samples, target_samples, t, r):
     )
 
     u, dudt = func.jvp(f, (x_interp, t, r), tangents , create_graph=True)  # ← REQUIR)
-    
+
 
     u_target = velocity - (t - r) * dudt
 

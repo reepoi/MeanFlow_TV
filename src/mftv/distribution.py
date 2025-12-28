@@ -1,5 +1,6 @@
-import torch 
-import numpy as np 
+import torch
+import numpy as np
+
 
 class GaussianGenerator:
     def __init__(self, n_dims=2, noise_std=1.0):
@@ -42,4 +43,4 @@ class CrescentGenerator:
             points = torch.cat((points, additional_points), dim=0)
 
         return points[:num_points].to(dtype=torch.float32)
-    
+

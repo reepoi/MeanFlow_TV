@@ -1,17 +1,17 @@
-from distribution import GaussianGenerator, CrescentGenerator
-from model import MeanFlowModel
-from trainer import Trainer
 import torch
 import torch.optim as optim
 import tqdm as TQDM
-from inf_and_plot import plot_and_save_trajectories
 
+from mftv.distribution import GaussianGenerator, CrescentGenerator
+from mftv.model import MeanFlowModel
+from mftv.trainer import Trainer
+from mftv.inf_and_plot import plot_and_save_trajectories
 
 
 if __name__ == "__main__":
 
     batch_size = 1024
-    num_batches_per_epoch = 100  
+    num_batches_per_epoch = 100
     n_epochs = 50
 
     p_init = GaussianGenerator(n_dims=2, noise_std=0.5)
@@ -24,7 +24,7 @@ if __name__ == "__main__":
     trainer_combined = Trainer(model_original, p_init, p_target, batch_size, method='Combined')
 
     model_original = trainer_backward.train_mean_flow_model( num_batches_per_epoch, n_epochs, lr=1e-3)
-    
+
     model_combined = trainer_combined.train_mean_flow_model(num_batches_per_epoch, n_epochs, lr=1e-3)
 
     model_dict = { 'Original': model_original, 'Combined': model_combined }

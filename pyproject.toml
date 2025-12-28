@@ -1,0 +1,40 @@
+[project]
+name = "mftv"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.rst"
+requires-python = ">=3.13"
+dependencies = [
+    "jupyterlab>=4.5.1",
+    "numpy>=2.4.0",
+    "seaborn>=0.13.2",
+    "torch>=2.9.1",
+    "tqdm>=4.67.1",
+]
+
+[tool.uv]
+index-strategy = "unsafe-best-match"
+link-mode = "symlink"
+
+[tool.uv.sources]
+hydra-orm = [
+    { git = "https://github.com/reepoi/hydra-orm" },
+]
+torch = [
+  { index = "pytorch-cpu", marker = "sys_platform != 'linux'" },
+  { index = "pytorch-cu129", marker = "sys_platform == 'linux'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu129"
+url = "https://download.pytorch.org/whl/cu129"
+explicit = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
