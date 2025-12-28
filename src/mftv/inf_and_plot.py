@@ -1,5 +1,6 @@
-import torch
 import os
+
+import torch
 import matplotlib.pyplot as plt
 
 from mftv.distribution import GaussianGenerator, CrescentGenerator
