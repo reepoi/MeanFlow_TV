@@ -62,13 +62,17 @@ class MeanFlow(pl.LightningModule):
 
     def compute_loss(self, batch):
         batch['end'] = (batch['end'] - self.mean_end) / self.std_end
-        end_time, start_time = torch.tensor(
+
+        start_time, end_time = torch.tensor(
             self.rng.uniform(size=(2, self.cfg.model.batch_size, 1)),
             dtype=batch['start'].dtype, device=batch['start'].device,
-        )#.sort(dim=0)[0]
-        dtime = end_time - start_time
-        velocity = batch['start'] - batch['end']
+        )
+
         x_start_time = batch['start'] * start_time + batch['end'] * (1 - start_time)
+        # derivative of x_start_time wrt start_time
+        velocity = batch['start'] - batch['end']
+
+        dtime = end_time - start_time
         losses = {}
         if self.cfg.model.tv_loss_coeff > 0:
             _, pmean_flow__pstart_time = torch.autograd.functional.jvp(
