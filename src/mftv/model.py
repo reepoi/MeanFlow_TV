@@ -3,13 +3,13 @@ import torch.nn as nn
 import numpy as np
 
 
-def build_mlp(input_dim, output_dim, hidden_dim, n_hidden):
+def build_mlp(input_dim, output_dim, hidden_dim, n_hidden, negative_slope=0.):
     layers = []
     layers.append(nn.Linear(input_dim, hidden_dim))
-    layers.append(nn.ReLU())
+    layers.append(nn.LeakyReLU(negative_slope=negative_slope))
     for _ in range(n_hidden - 1):
         layers.append(nn.Linear(hidden_dim, hidden_dim))
-        layers.append(nn.ReLU())
+        layers.append(nn.LeakyReLU(negative_slope=negative_slope))
     layers.append(nn.Linear(hidden_dim, output_dim))
     return nn.Sequential(*layers)
 
@@ -19,7 +19,12 @@ class MeanFlowModel(torch.nn.Module):
         super().__init__()
         self.time_embed_dim = time_embed_dim
 
-        self.net = build_mlp(input_dim + 2 * time_embed_dim, output_dim, dim, n_hidden)
+        negative_slope = .15
+        self.net = build_mlp(input_dim + 2 * time_embed_dim, output_dim, dim, n_hidden, negative_slope=negative_slope)
+        for m in self.net:
+            if isinstance(m, nn.Linear):
+                nn.init.kaiming_normal_(m.weight, a=negative_slope)
+                nn.init.zeros_(m.bias)
 
 
     def time_embedding(self, t):
