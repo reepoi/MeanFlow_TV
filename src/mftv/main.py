@@ -88,7 +88,7 @@ class MeanFlow(pl.LightningModule):
             )
             dmean_flow__dstart_time = pmean_flow__px_start_time.detach() + pmean_flow__pstart_time
             target_mean_flow = velocity + dtime * dmean_flow__dstart_time
-            dtime_tv_target = velocity - mean_flow - dtime * pmean_flow__pstart_time
+            dtime_tv_target = mean_flow.detach() - velocity - dtime * pmean_flow__pstart_time
             dtime_tv_loss = (dtime * pmean_flow__px_start_time - dtime_tv_target).square().sum(1)
             # dtime_tv_loss = torch.where(dtime.abs() < 1e-1, dtime_tv_loss, 0. * dtime_tv_loss)
             losses['dtime_tv_loss'] = dtime_tv_loss.mean()
