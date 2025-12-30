@@ -65,8 +65,8 @@ class MeanFlow(pl.LightningModule):
         end_time, start_time = torch.tensor(
             self.rng.uniform(size=(2, self.cfg.model.batch_size, 1)),
             dtype=batch['start'].dtype, device=batch['start'].device,
-        ).sort(dim=0)[0]
-        dtime = (end_time - start_time).abs()
+        )#.sort(dim=0)[0]
+        dtime = end_time - start_time
         velocity = batch['start'] - batch['end']
         x_start_time = batch['start'] * start_time + batch['end'] * (1 - start_time)
         losses = {}
@@ -83,8 +83,8 @@ class MeanFlow(pl.LightningModule):
                 create_graph=True,
             )
             dmean_flow__dstart_time = pmean_flow__px_start_time.detach() + pmean_flow__pstart_time
-            target_mean_flow = velocity - dtime * dmean_flow__dstart_time
-            dtime_tv_target = velocity - mean_flow - dtime * pmean_flow__pstart_time
+            target_mean_flow = velocity + dtime * dmean_flow__dstart_time
+            dtime_tv_target = velocity - mean_flow + dtime * pmean_flow__pstart_time
             dtime_tv_loss = (dtime * pmean_flow__px_start_time - dtime_tv_target).square().sum(1)
             losses['dtime_tv_loss'] = dtime_tv_loss.mean()
             losses['tv_loss'] = (dtime_tv_loss / dtime).mean()
@@ -96,7 +96,7 @@ class MeanFlow(pl.LightningModule):
                 create_graph=True,
             )
             dmean_flow__dstart_time = dmean_flow__dstart_time.detach()
-            target_mean_flow = velocity - dtime * dmean_flow__dstart_time
+            target_mean_flow = velocity + dtime * dmean_flow__dstart_time
 
         losses['mean_flow_loss'] = (mean_flow - target_mean_flow).square().sum(1).mean()
 
