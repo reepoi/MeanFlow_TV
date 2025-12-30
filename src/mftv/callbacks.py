@@ -5,11 +5,21 @@ import itertools
 import lightning.pytorch as pl
 import torch
 import torch.nn as nn
+import torch.optim.swa_utils
 from tqdm import tqdm
 
 
 class ModelCheckpoint(pl.callbacks.ModelCheckpoint):
     CHECKPOINT_EQUALS_CHAR = '_'
+
+
+class EMAWeightAveraging(pl.callbacks.WeightAveraging):
+    def __init__(self):
+        super().__init__(avg_fn=torch.optim.swa_utils.get_ema_avg_fn())
+
+    def should_update(self, step_idx=None, epoch_idx=None):
+        # Start after 100 steps.
+        return (step_idx is not None) and (step_idx >= 100)
 
 
 class LogStats(pl.callbacks.Callback):

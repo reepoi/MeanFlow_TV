@@ -61,7 +61,7 @@ class MeanFlow(pl.LightningModule):
             _, pmean_flow__pstart_time = torch.autograd.functional.jvp(
                 self,
                 (x_start_time, start_time, end_time),
-                v=(self.zeros.expand(velocity.shape), self.one.expand(start_time.shape), self.zero.expand(start_time.shape)),
+                v=(self.zero.expand(velocity.shape), self.one.expand(start_time.shape), self.zero.expand(start_time.shape)),
             )
             mean_flow, pmean_flow__px_start_time = torch.autograd.functional.jvp(
                 self,
@@ -71,10 +71,10 @@ class MeanFlow(pl.LightningModule):
             )
             dmean_flow__dstart_time = pmean_flow__px_start_time.detach() + pmean_flow__pstart_time
             target_mean_flow = velocity - dtime * dmean_flow__dstart_time
-            dtime_tv_target = velocity - mean_flow - pmean_flow__pstart_time
+            dtime_tv_target = velocity - mean_flow - dtime * pmean_flow__pstart_time
             dtime_tv_loss = (dtime * pmean_flow__px_start_time - dtime_tv_target).square().sum(1)
             losses['dtime_tv_loss'] = dtime_tv_loss.mean()
-            losses['tv_loss'] = (dtime_tv_target / dtime).mean()
+            losses['tv_loss'] = (dtime_tv_loss / dtime).mean()
         else:
             mean_flow, dmean_flow__dstart_time = torch.autograd.functional.jvp(
                 self,
@@ -113,13 +113,15 @@ def main(cfg):
 
     pl.seed_everything(cfg.rng_seed)
     with pl.utilities.seed.isolate_rng():
-        model = mftv.model.MeanFlowModel(input_dim=2, output_dim=2, dim=256, n_hidden=2)
+        # model = mftv.model.MeanFlowModel(input_dim=2, output_dim=2, dim=256, n_hidden=2)
+        model = mftv.model.MeanFlowModel(input_dim=cfg.dataset_start.dim, output_dim=cfg.dataset_end.dim, dim=64, n_hidden=4)
 
     mean_flow = MeanFlow(cfg, rng_mean_flow, dataset_start, dataset_end, model)
 
     logger = mftv.loggers.CSVLogger(cfg.run_dir, name=None)
 
     callbacks = [
+        # mftv.callbacks.EMAWeightAveraging(),
         mftv.callbacks.ModelCheckpoint(
             dirpath=cfg.run_dir,
             filename='{epoch}',
@@ -135,11 +137,12 @@ def main(cfg):
         accelerator=cfg.device,
         devices=1,
         logger=logger,
-        max_epochs=50,
-        reload_dataloaders_every_n_epochs=1,
+        max_steps=5_000,
+        # max_epochs=50,
+        # reload_dataloaders_every_n_epochs=1,
         deterministic=True,
         callbacks=callbacks,
-        log_every_n_steps=10,
+        log_every_n_steps=50,
     )
 
     if cfg.fit:
