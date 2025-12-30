@@ -27,10 +27,22 @@ class MeanFlow(pl.LightningModule):
         self.dataset_start = dataset_start
         self.dataset_end = dataset_end
         self.model = model
+        data_end = self.dataset_end.generate(8192)
+        self.register_buffer('mean_end', data_end.mean())
+        self.register_buffer('std_end', data_end.std())
         self.register_buffer('zero', torch.tensor(0.), persistent=False)
         self.register_buffer('one', torch.tensor(1.), persistent=False)
 
     def configure_optimizers(self):
+        # lr = self.cfg.model.lr
+        # optimizer = torch.optim.Adam(self.parameters(), lr=lr)
+        # # optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.cfg.model.lr)
+        # return dict(
+        #     optimizer=optimizer,
+        #     lr_scheduler=dict(
+        #         scheduler=torch.optim.lr_scheduler.OneCycleLR(optimizer, lr, total_steps=5_000),
+        #     ),
+        # )
         return torch.optim.AdamW(self.model.parameters(), lr=self.cfg.model.lr)
 
     def train_dataloader(self):
@@ -49,6 +61,7 @@ class MeanFlow(pl.LightningModule):
         return self.model(x_start_time, start_time, end_time)
 
     def compute_loss(self, batch):
+        batch['end'] = (batch['end'] - self.mean_end) / self.std_end
         end_time, start_time = torch.tensor(
             self.rng.uniform(size=(2, self.cfg.model.batch_size, 1)),
             dtype=batch['start'].dtype, device=batch['start'].device,
