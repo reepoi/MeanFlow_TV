@@ -10,6 +10,8 @@ from omegaconf import OmegaConf
 import sqlalchemy as sa
 from hydra_orm import orm
 
+import conf.dataset
+import conf.model
 import mftv.utils
 
 
@@ -59,7 +61,7 @@ class Conf(orm.InheritableTable):
         '_self_',
     ])
     root_dir: str = field(default=str(mftv.utils.DIR_ROOT.resolve()))
-    out_dir: str = field(default=str((mftv.utils.DIR_ROOT/'..'/'..'/'out'/'Latent-Dynamics-Data-Assimilation').resolve()))
+    out_dir: str = field(default=str((mftv.utils.DIR_ROOT/'..'/'..'/'out'/'MeanFlowTV').resolve()))
     run_subdir: str = field(default='runs')
     prediction_filename: str = field(default='output')
     device: str = field(default='cuda')
@@ -79,15 +81,17 @@ sa.event.listens_for(Conf, 'before_insert', propagate=True)(
 
 class TrainingAndEvaluation(Conf):
     defaults: List[Any] = hydra_orm.utils.make_defaults_list([
-        dict(dataset=omegaconf.MISSING),
+        dict(dataset_start=omegaconf.MISSING),
+        dict(dataset_end=omegaconf.MISSING),
         dict(model=omegaconf.MISSING),
         '_self_',
     ])
     fit: bool = orm.make_field(orm.ColumnRequired(sa.Boolean), default=True)
     predict: bool = orm.make_field(orm.ColumnRequired(sa.Boolean), default=False)
 
-    # dataset = orm.OneToManyField(conf.dataset.Dataset, required=True, default=omegaconf.MISSING)
-    # model = orm.OneToManyField(conf.model.Model, required=True, default=omegaconf.MISSING)
+    dataset_start = orm.OneToManyField(conf.dataset.Dataset, required=True, default=omegaconf.MISSING, column_name='DatasetStart')
+    dataset_end = orm.OneToManyField(conf.dataset.Dataset, required=True, default=omegaconf.MISSING, column_name='DatasetEnd')
+    model = orm.OneToManyField(conf.model.Model, required=True, default=omegaconf.MISSING)
 
     # def get_model(self):
     #     if isinstance(self.model, Trained):
@@ -109,3 +113,7 @@ class TrainingAndEvaluation(Conf):
 #         return conf
 
 orm.store_config(TrainingAndEvaluation)
+orm.store_config(conf.model.MeanFlow, group=TrainingAndEvaluation.model.key)
+for group in (TrainingAndEvaluation.dataset_start.key, TrainingAndEvaluation.dataset_end.key):
+    orm.store_config(conf.dataset.Gaussian, group=group)
+    orm.store_config(conf.dataset.Crescent, group=group)

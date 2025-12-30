@@ -5,8 +5,13 @@ description = "Add your description here"
 readme = "README.rst"
 requires-python = ">=3.13"
 dependencies = [
+    "duckdb>=1.4.3",
+    "einops>=0.8.1",
+    "hydra-orm>=0.1.0",
     "jupyterlab>=4.5.1",
+    "lightning>=2.6.0",
     "numpy>=2.4.0",
+    "polars[pyarrow]>=1.36.1",
     "seaborn>=0.13.2",
     "torch>=2.9.1",
     "tqdm>=4.67.1",

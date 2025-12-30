@@ -6,15 +6,93 @@ from omegaconf import OmegaConf
 import numpy as np
 import lightning.pytorch as pl
 import torch
+from torch.utils.data import DataLoader
 
 import conf.conf
-import dcon.utils
+import mftv.callbacks
+import mftv.datasets
+import mftv.loggers
+import mftv.model
+import mftv.utils
 
 
-log = dcon.utils.getLoggerByFilename(__file__)
+log = mftv.utils.getLoggerByFilename(__file__)
 
 
-@hydra.main(**dcon.utils.HYDRA_INIT)
+class MeanFlow(pl.LightningModule):
+    def __init__(self, cfg, rng: np.random.Generator, dataset_start, dataset_end, model):
+        super().__init__()
+        self.cfg = cfg
+        self.rng = rng
+        self.dataset_start = dataset_start
+        self.dataset_end = dataset_end
+        self.model = model
+        self.register_buffer('zero', torch.tensor(0.), persistent=False)
+        self.register_buffer('one', torch.tensor(1.), persistent=False)
+
+    def configure_optimizers(self):
+        return torch.optim.AdamW(self.model.parameters(), lr=self.cfg.model.lr)
+
+    def train_dataloader(self):
+        cl = pl.utilities.CombinedLoader(dict(
+            start=DataLoader(self.dataset_start, batch_size=self.cfg.model.batch_size),
+            end=DataLoader(self.dataset_end, batch_size=self.cfg.model.batch_size),
+            _batch=DataLoader(range(100)),
+        ), mode='min_size')
+        iter(cl)
+        return cl
+
+    def training_step(self, batch, batch_idx):
+        return self.compute_loss(batch)
+
+    def forward(self, x_start_time, start_time, end_time):
+        return self.model(x_start_time, start_time, end_time)
+
+    def compute_loss(self, batch):
+        end_time, start_time = torch.tensor(
+            self.rng.uniform(size=(2, self.cfg.model.batch_size, 1)),
+            dtype=batch['start'].dtype, device=batch['start'].device,
+        ).sort(dim=0)[0]
+        dtime = (end_time - start_time).abs()
+        velocity = batch['start'] - batch['end']
+        x_start_time = batch['start'] * start_time + batch['end'] * (1 - start_time)
+        losses = {}
+        if self.cfg.model.tv_loss_coeff > 0:
+            _, pmean_flow__pstart_time = torch.autograd.functional.jvp(
+                self,
+                (x_start_time, start_time, end_time),
+                v=(self.zeros.expand(velocity.shape), self.one.expand(start_time.shape), self.zero.expand(start_time.shape)),
+            )
+            mean_flow, pmean_flow__px_start_time = torch.autograd.functional.jvp(
+                self,
+                (x_start_time, start_time, end_time),
+                v=(velocity, self.zero.expand(start_time.shape), self.zero.expand(start_time.shape)),
+                create_graph=True,
+            )
+            dmean_flow__dstart_time = pmean_flow__px_start_time.detach() + pmean_flow__pstart_time
+            target_mean_flow = velocity - dtime * dmean_flow__dstart_time
+            dtime_tv_target = velocity - mean_flow - pmean_flow__pstart_time
+            dtime_tv_loss = (dtime * pmean_flow__px_start_time - dtime_tv_target).square().sum(1)
+            losses['dtime_tv_loss'] = dtime_tv_loss.mean()
+            losses['tv_loss'] = (dtime_tv_target / dtime).mean()
+        else:
+            mean_flow, dmean_flow__dstart_time = torch.autograd.functional.jvp(
+                self,
+                (x_start_time, start_time, end_time),
+                v=(velocity, self.one.expand(start_time.shape), self.zero.expand(start_time.shape)),
+                create_graph=True,
+            )
+            dmean_flow__dstart_time = dmean_flow__dstart_time.detach()
+            target_mean_flow = velocity - dtime * dmean_flow__dstart_time
+
+        losses['mean_flow_loss'] = (mean_flow - target_mean_flow).square().sum(1).mean()
+
+        losses['loss'] = losses['mean_flow_loss'] + self.cfg.model.tv_loss_coeff * losses.get('dtime_tv_loss', 0.)
+
+        return losses
+
+
+@hydra.main(**mftv.utils.HYDRA_INIT)
 def main(cfg):
     with conf.conf.Session() as db:
         cfg = conf.conf.orm.instantiate_and_insert_config(db, OmegaConf.to_container(cfg, resolve=True))
@@ -23,16 +101,41 @@ def main(cfg):
         log.info(pprint.pformat(cfg))
         log.info('Output directory: %s', cfg.run_dir)
 
-    rng = np.random.default_rng(dcon.utils.RNG_RANDBITS['DATASET'][cfg.rng_seed])
+    rng = np.random.default_rng(mftv.utils.RNG_RANDBITS['DATASET'][cfg.rng_seed])
+    (
+        rng_dataset_start,
+        rng_dataset_end,
+        rng_mean_flow,
+    ) = rng.spawn(3)
 
-    logger = dcon.loggers.CSVLogger(cfg.run_dir, name=None)
+    dataset_start = mftv.datasets.get_dataset(cfg.dataset_start, rng)
+    dataset_end = mftv.datasets.get_dataset(cfg.dataset_end, rng)
 
-    callbacks = []
+    pl.seed_everything(cfg.rng_seed)
+    with pl.utilities.seed.isolate_rng():
+        model = mftv.model.MeanFlowModel(input_dim=2, output_dim=2, dim=256, n_hidden=2)
+
+    mean_flow = MeanFlow(cfg, rng_mean_flow, dataset_start, dataset_end, model)
+
+    logger = mftv.loggers.CSVLogger(cfg.run_dir, name=None)
+
+    callbacks = [
+        mftv.callbacks.ModelCheckpoint(
+            dirpath=cfg.run_dir,
+            filename='{epoch}',
+            save_last='link',
+            # monitor='loss',  # do not use 'loss' with mean flow loss, use some other metric
+            # save_top_k=2,
+            save_on_train_epoch_end=True,
+            enable_version_counter=False,
+        ),
+        mftv.callbacks.LogStats(),
+    ]
     trainer = pl.Trainer(
         accelerator=cfg.device,
         devices=1,
         logger=logger,
-        max_epochs=10,
+        max_epochs=50,
         reload_dataloaders_every_n_epochs=1,
         deterministic=True,
         callbacks=callbacks,
@@ -40,8 +143,7 @@ def main(cfg):
     )
 
     if cfg.fit:
-        pass
-        # trainer.fit(model, datamodule=dataset)
+        trainer.fit(mean_flow)
 
 
 if __name__ == '__main__':
