@@ -67,12 +67,12 @@ class MeanFlow(pl.LightningModule):
             self.rng.uniform(size=(2, self.cfg.model.batch_size, 1)),
             dtype=batch['start'].dtype, device=batch['start'].device,
         )
+        dtime = end_time - start_time
 
         x_start_time = batch['start'] * start_time + batch['end'] * (1 - start_time)
         # derivative of x_start_time wrt start_time
         velocity = batch['start'] - batch['end']
 
-        dtime = end_time - start_time
         losses = {}
         if self.cfg.model.tv_loss_coeff > 0:
             _, pmean_flow__pstart_time = torch.autograd.functional.jvp(
@@ -89,10 +89,10 @@ class MeanFlow(pl.LightningModule):
             dmean_flow__dstart_time = pmean_flow__px_start_time.detach() + pmean_flow__pstart_time
             target_mean_flow = velocity + dtime * dmean_flow__dstart_time
             dtime_tv_target = mean_flow.detach() - velocity - dtime * pmean_flow__pstart_time
-            dtime_tv_loss = (dtime * pmean_flow__px_start_time - dtime_tv_target).square().sum(1)
-            # dtime_tv_loss = torch.where(dtime.abs() < 1e-1, dtime_tv_loss, 0. * dtime_tv_loss)
-            losses['dtime_tv_loss'] = dtime_tv_loss.mean()
-            losses['tv_loss'] = (dtime_tv_loss / dtime.abs()).mean()
+            dtime2_tv_loss = (dtime * pmean_flow__px_start_time - dtime_tv_target).square().sum(1)
+            # dtime2_tv_loss = torch.where(dtime.abs() < 1e-1, dtime2_tv_loss, 0. * dtime2_tv_loss)
+            losses['dtime2_tv_loss'] = dtime2_tv_loss.mean()
+            losses['tv_loss'] = (dtime2_tv_loss / dtime.square()).mean()
         else:
             mean_flow, dmean_flow__dstart_time = torch.autograd.functional.jvp(
                 self,
